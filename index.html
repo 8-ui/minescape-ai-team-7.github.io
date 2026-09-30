@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MineScape AI - Command Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    #map { height: 360px; border-radius: 0.75rem; }
+    .pulse-red { animation: pulse 1.5s infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+    <div class="flex items-center space-x-3">
+      <div class="h-9 w-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xl border border-amber-500/30">M</div>
+      <div>
+        <h1 class="text-lg font-bold tracking-wide">MineScape AI <span class="text-xs font-normal text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700">SIH26025</span></h1>
+        <p class="text-xs text-slate-400">Mine Subsidence Monitoring & Early Warning System</p>
+      </div>
+    </div>
+    
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center gap-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700 text-xs">
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+        <span class="text-slate-300">ESP32 LoRa Gateway: <strong class="text-emerald-400">Active</strong></span>
+      </div>
+      <div id="riskBadge" class="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5">
+        ⚠️ MODERATE RISK (Zone 2)
+      </div>
+    </div>
+  </header>
+
+  <main class="p-6 space-y-6">
+    <!-- Top Metric Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <p class="text-xs text-slate-400 uppercase tracking-wider">AI Subsidence Risk</p>
+        <div class="flex items-baseline justify-between mt-2">
+          <span class="text-3xl font-bold text-amber-400">64<span class="text-lg">%</span></span>
+          <span class="text-xs text-amber-400/80 bg-amber-950 px-2 py-0.5 rounded">+12% in 1 hr</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">Prediction: Critical in ~3.8 hrs</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <p class="text-xs text-slate-400 uppercase tracking-wider">Surface Tilt (X/Y)</p>
+        <div class="flex items-baseline justify-between mt-2">
+          <span id="tiltVal" class="text-3xl font-bold text-slate-100">1.82°</span>
+          <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded">Node-03</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">Baseline threshold: 0.80°</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <p class="text-xs text-slate-400 uppercase tracking-wider">Crack Displacement</p>
+        <div class="flex items-baseline justify-between mt-2">
+          <span id="crackVal" class="text-3xl font-bold text-rose-400">4.12 <span class="text-sm">mm</span></span>
+          <span class="text-xs text-rose-400/80 bg-rose-950 px-2 py-0.5 rounded">Expansion</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">Velocity: 0.45 mm/hr</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <p class="text-xs text-slate-400 uppercase tracking-wider">Sensor Mesh Health</p>
+        <div class="flex items-baseline justify-between mt-2">
+          <span class="text-3xl font-bold text-emerald-400">5 / 6</span>
+          <span class="text-xs text-emerald-400/80 bg-emerald-950 px-2 py-0.5 rounded">LoRa Mesh</span>
+        </div>
+        <p class="text-xs text-slate-500 mt-1">Node-06 Low Battery (18%)</p>
+      </div>
+    </div>
+
+    <!-- Main Section: Map + AI Insights -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Interactive Sensor Map (2 Cols) -->
+      <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-sm font-semibold text-slate-200">Live Surface Node GIS Tracking (Jharia Pit-4)</h2>
+          <span class="text-xs text-slate-400">Click a node to inspect telemetry</span>
+        </div>
+        <div id="map" class="w-full flex-grow"></div>
+      </div>
+
+      <!-- Explainable Risk & Actions (1 Col) -->
+      <div class="space-y-4">
+        <!-- Explainable Risk Box -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <h2 class="text-sm font-semibold text-slate-200 mb-2">Explainable Risk Breakdown</h2>
+          <p class="text-xs text-slate-400 mb-3">Why was the moderate alert triggered by the AI model?</p>
+          
+          <div class="space-y-2.5 text-xs">
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <span>Crack Width Rate (Node-03)</span>
+                <span class="font-bold text-amber-400">55% weight</span>
+              </div>
+              <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div class="bg-amber-400 h-full rounded-full" style="width: 55%"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <span>Microseismic Vibration Spikes</span>
+                <span class="font-bold text-rose-400">30% weight</span>
+              </div>
+              <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div class="bg-rose-400 h-full rounded-full" style="width: 30%"></div>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between text-slate-300 mb-1">
+                <span>Rainfall / Soil Saturation</span>
+                <span class="font-bold text-blue-400">15% weight</span>
+              </div>
+              <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                <div class="bg-blue-400 h-full rounded-full" style="width: 15%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Emergency Action Panel -->
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+          <h2 class="text-sm font-semibold text-slate-200 mb-3">Incident Control</h2>
+          <div class="flex flex-col gap-2">
+            <button id="sirenBtn" onclick="toggleSiren()" class="w-full py-2.5 px-4 bg-rose-600/20 border border-rose-500/50 hover:bg-rose-600/30 text-rose-300 rounded-lg text-xs font-semibold tracking-wide transition flex justify-center items-center gap-2">
+              🚨 Trigger On-Site Siren (Zone 2)
+            </button>
+            <button onclick="alert('SMS broadcast sent to 24 registered miners and shift managers.')" class="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">
+              📲 Broadcast Evacuation SMS
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Telemetry Stream Chart & Events -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-sm font-semibold text-slate-200">Real-Time Telemetry Trend (Node-03)</h2>
+          <span class="text-xs text-emerald-400 flex items-center gap-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Streaming (2s)
+          </span>
+        </div>
+        <div class="h-56">
+          <canvas id="telemetryChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Live Event Logs -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+        <h2 class="text-sm font-semibold text-slate-200 mb-2">Audit & Event Logs</h2>
+        <div id="logContainer" class="space-y-2 text-xs text-slate-400 overflow-y-auto max-h-52 pr-1 font-mono">
+          <div class="p-1.5 bg-slate-950 rounded border border-slate-800">
+            <span class="text-slate-500">[13:58:12]</span> Baseline calibrated for Node-01 to 05.
+          </div>
+          <div class="p-1.5 bg-slate-950 rounded border border-slate-800">
+            <span class="text-amber-500">[14:01:04]</span> Warning: Node-03 tilt crossed threshold (1.2°).
+          </div>
+          <div class="p-1.5 bg-slate-950 rounded border border-slate-800">
+            <span class="text-rose-400">[14:03:20]</span> AI Risk updated to 64%. Anomaly flag set.
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // 1. Initialize Map
+    const map = L.map('map').setView([23.755, 86.415], 16);
+    
+    // Esri World Imagery (High Resolution Real Satellite View)
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+      maxZoom: 18
+    }).addTo(map);
+
+    // Mock Mine Surface Nodes
+    const nodes = [
+      { id: 'Node-01', lat: 23.7562, lng: 86.4135, status: 'Normal', color: '#10b981' },
+      { id: 'Node-02', lat: 23.7548, lng: 86.4162, status: 'Normal', color: '#10b981' },
+      { id: 'Node-03', lat: 23.7553, lng: 86.4144, status: 'Warning', color: '#f59e0b' },
+      { id: 'Node-04', lat: 23.7535, lng: 86.4128, status: 'Normal', color: '#10b981' }
+    ];
+
+    nodes.forEach(n => {
+      const circle = L.circleMarker([n.lat, n.lng], {
+        color: n.color,
+        fillColor: n.color,
+        fillOpacity: 0.8,
+        radius: 9
+      }).addTo(map);
+      circle.bindPopup(`<b>${n.id}</b><br>Status: ${n.status}<br>Type: ESP32 Multi-sensor node`);
+    });
+
+    // 2. Real-time Telemetry Chart (Chart.js)
+    const ctx = document.getElementById('telemetryChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: ['00s', '02s', '04s', '06s', '08s', '10s', '12s'],
+        datasets: [
+          {
+            label: 'Tilt Angle (°)',
+            data: [1.1, 1.15, 1.25, 1.40, 1.55, 1.70, 1.82],
+            borderColor: '#f59e0b',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: false
+          },
+          {
+            label: 'Crack Width (mm)',
+            data: [2.5, 2.7, 2.9, 3.2, 3.6, 3.9, 4.12],
+            borderColor: '#f43f5e',
+            borderWidth: 2,
+            tension: 0.35,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b' } },
+          y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b' } }
+        },
+        plugins: {
+          legend: { labels: { color: '#94a3b8', boxWidth: 12 } }
+        }
+      }
+    });
+
+    // 3. Simulate incoming IoT streaming data every 2.5 seconds
+    setInterval(() => {
+      const time = new Date().toLocaleTimeString().split(' ')[0];
+      const newTilt = +(1.80 + Math.random() * 0.15).toFixed(2);
+      const newCrack = +(4.10 + Math.random() * 0.1).toFixed(2);
+
+      // Update Card Displays
+      document.getElementById('tiltVal').innerText = `${newTilt}°`;
+      document.getElementById('crackVal').innerHTML = `${newCrack} <span class="text-sm">mm</span>`;
+
+      // Update Chart
+      chart.data.labels.shift();
+      chart.data.labels.push(time);
+      chart.data.datasets[0].data.shift();
+      chart.data.datasets[0].data.push(newTilt);
+      chart.data.datasets[1].data.shift();
+      chart.data.datasets[1].data.push(newCrack);
+      chart.update('none');
+    }, 2500);
+
+    // 4. Siren Action Mock
+    let sirenActive = false;
+    function toggleSiren() {
+      sirenActive = !sirenActive;
+      const btn = document.getElementById('sirenBtn');
+      if (sirenActive) {
+        btn.className = "w-full py-2.5 px-4 bg-rose-600 text-white rounded-lg text-xs font-bold pulse-red transition";
+        btn.innerText = "🛑 STOP SIREN (ACTIVATED)";
+      } else {
+        btn.className = "w-full py-2.5 px-4 bg-rose-600/20 border border-rose-500/50 hover:bg-rose-600/30 text-rose-300 rounded-lg text-xs font-semibold tracking-wide transition flex justify-center items-center gap-2";
+        btn.innerText = "🚨 Trigger On-Site Siren (Zone 2)";
+      }
+    }
+  </script>
+</body>
+</html>
